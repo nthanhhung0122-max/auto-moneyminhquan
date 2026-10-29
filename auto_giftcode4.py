@@ -1,7 +1,7 @@
 """
 ====================================================================
   BOT QUET & NAP GIFTCODE TELEPET 24/7 (BAN TOI UU NANG CAO)
-  Tai khoan: ACC 4 (@Sỹ Nguyên - ID: 8938080937)
+  Tai khoan: ACC 4 (@Wind_trader - ID: 8735204819)
   TINH NANG NANG CAP:
       - TU DONG LAY INIT_DATA MOI QUA TELETHON (Khong bao gio het han)
       - BE KHOA MOI DANG LINK RUT GON (Layma, Link4m, Linktop, Traffictop, TrafficHub, Traffic68, v.v.)
@@ -343,7 +343,9 @@ def scan_account_tasks(session, acc_name=""):
 
 def scan_and_redeem_giftcodes():
     u = refresh_profile()
-    # Da go bo check locked==2 vi day la thuoc tinh level, khong phai limit giftcode
+    if u and u.get("locked") == 2:
+        log("LIMIT", "Tai khoan TelePet da cham gioi han GiftCode hom nay (locked=2)! Tam dung farm den ngay mai de an toan.", Fore.YELLOW)
+        return -999
 
     total_coins_earned = 0
     total_codes_earned = 0
@@ -408,7 +410,7 @@ def main():
     print(f"""
 {Fore.MAGENTA}====================================================================
 |  TOOL QUET & BE KHOA GIFTCODE TELEPET 24/7 (TOI UU NANG CAO)     |
-|  Tai khoan: @Sỹ Nguyên (ID: 8938080937)                   |
+|  Tai khoan: Uweuweuweuweu Osas (@Wind_trader - ID: 8735204819)                   |
 |  - Chu ky quet: {SCAN_INTERVAL_SECONDS} giay / lan                             |
 |  - Che do Auto-Farm vo han: {'BAT' if AUTO_FARM_ROTATION else 'TAT'}                                 |
 |  - Tu dong lay token init_data tu Telegram                       |
