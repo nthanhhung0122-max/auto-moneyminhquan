@@ -1,30 +1,442 @@
-name: Auto Nhiem Vu (Acc 4)
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+====================================================================
+  BOT AUTO CYBERPET IDLE 24/7 (NUOI THU DAO TOKEN $PET)
+  Bot Telegram: @CyberPetVN_bot (ID: 8634208634)
+  Web App URL: https://empty-king-ec20.lequocviet94nb.workers.dev/
+  
+  PHIEN BAN MOI FIX TRIET DE LOI MALFORMED & DONG BO 100%:
+      - SU DUNG TELETHON STRINGSESSION: Chay hoan toan tren bo nho RAM,
+        khong dung file SQLite -> TRIET TIEU 100% loi "database disk image is malformed"!
+      - FIX LOI DONG BO DIEN THOAI: Tu dong set future timestamp khi luu CloudStorage,
+        giup dien thoai luon nhan dien du lieu moi va khong bao gio bi tro ve so cu.
+      - TU DONG LAY INIT_DATA MOI (Khong bao gio het han token)
+      - DOC / GHI TRUC TIEP TELEGRAM CLOUDSTORAGE (cyberpet_idle_save_v1)
+      - AUTO XEM QUANG CAO HOP LE: Pin (+10p), Vang (+5), Boost (x2), $PET (+0.2)
+      - AUTO DAO TOKEN THEO THOI GIAN THUC KHI CON PIN
+      - DONG BO SONG SONG LEN TELEGRAM CLOUD DB (PINNED MESSAGE ADMIN)
+      - CHAY 24/7 MUOT MA TREN GITHUB ACTIONS VA MAY CA NHAN
+====================================================================
+"""
 
-on:
-  schedule:
-    - cron: '10 17 * * *'  # 00:10 GMT+7
-  workflow_dispatch:
+import time
+import requests
+import urllib.parse
+import json
+import re
+import os
+import random
+import asyncio
+from datetime import datetime
 
-jobs:
-  run-daily:
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+from telethon import TelegramClient
+from telethon.sessions import StringSession
+from telethon.tl.functions.messages import RequestWebViewRequest
+from telethon.tl.functions.bots import InvokeWebViewCustomMethodRequest
+from telethon.tl.types import DataJSON
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
+# -----------------------------------------------------------------
+#  CAU HINH HE THONG
+# -----------------------------------------------------------------
+API_ID = 39182276
+API_HASH = "f02b155d895a3a3fbf8a1cbe810b5338"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests telethon colorama
+# StringSession chuan 353 ky tu, khong can file sqlite, chay cuc ky on dinh tren GitHub Actions
+DEFAULT_STRING_SESSION = "1BVtsOHIBuxmpWiBJ9hvwV9pSrzWw5U2I5Fe20Ww8l1LCk9rnsG6T6lLZEJXZE1JJC_qUH_yyWHnRoedRNI5lJYnfjRN4gyGeDrCxquDU12ZflrpCz0VLhMZx2C0LlyUCy2eHRSRE1wUCpEYZaymL0P7Z9eAHwMy4Oogewh5TqyO4x4MF6j0yTq8Zvfpv43O4aQDzErNv3GRqpx8DXBcOJIMP9yVhq-Mby5VH5J9cF-h-bJ5ws3xKjA4GY7YKjHxDt9OI-Zr7mr-V3qZy99UxJooThJj51f2RqOKhODdLh9XZQ0ygSoAd3iFAZDOPMEo8Ch5TrrzLXi2Q3N0HorIL1JfV0xoFQlY="
 
-      - name: Chay Bot Nhiem Vu Acc 4
-        env:
-          PYTHONUNBUFFERED: "1"
-        run: |
-          python auto_kiemtien4.py
+BOT_USERNAME = "CyberPetVN_bot"
+WEBAPP_URL = "https://empty-king-ec20.lequocviet94nb.workers.dev/"
+
+TG_NOTIFY_BOT_TOKEN = "8634208634:AAFMnzSLDXIwJAwrcUFPDxrmI8Ja9BA0nkw"
+TG_ADMIN_CHAT_ID = "5911522940"
+SECURITY_SALT = "CYBER_PET_MONETAG_SECURITY_2026"
+
+CURRENT_INIT_DATA = ""
+CURRENT_USER_ID = "7744031191"
+CURRENT_USER_NAME = ""
+
+AD_INTERVAL_SECONDS = 25
+CLOUD_SYNC_INTERVAL = 300
+
+IS_GITHUB_ACTIONS = os.getenv("GITHUB_ACTIONS") == "true"
+MAX_RUNTIME = int(os.getenv("MAX_RUNTIME_SECONDS", "19800" if IS_GITHUB_ACTIONS else "0"))
+
+def log(tag, msg):
+    t = datetime.now().strftime("%H:%M:%S")
+    print(f"[{t}] [{tag}] {msg}", flush=True)
+
+# -----------------------------------------------------------------
+#  HAM TINH TOAN CHU KY ANTI-CHEAT CHUAN 100% THEO GAME ENGINE
+# -----------------------------------------------------------------
+def calculate_state_signature(state):
+    coins = int(state.get("coins", 0))
+    tokens = f"{float(state.get('tokens', 0)):.4f}"
+    ads = int(state.get("totalAdsWatched", 0))
+    daily = int(state.get("dailyAdsWatched", 0))
+    gifts = "0.00"
+    raw = f"{coins}:{tokens}:{ads}:{daily}:{gifts}:{SECURITY_SALT}"
+    
+    h = 0
+    for ch in raw:
+        h = ((h << 5) - h) + ord(ch)
+        h &= 0xFFFFFFFF
+        if h >= 0x80000000:
+            h -= 0x100000000
+
+    def to_base36(n):
+        digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+        if n == 0:
+            return "0"
+        res = []
+        while n > 0:
+            res.append(digits[n % 36])
+            n //= 36
+        return "".join(reversed(res))
+
+    return "SIG_" + to_base36(abs(h))
+
+# -----------------------------------------------------------------
+#  KHOI TAO CLIENT TELETHON BANG STRINGSESSION (KHONG DUNG FILE SQLITE)
+# -----------------------------------------------------------------
+def get_authorized_client():
+    session_str = os.getenv("TELEGRAM_STRING_SESSION") or DEFAULT_STRING_SESSION
+    return TelegramClient(StringSession(session_str), API_ID, API_HASH)
+
+async def fetch_fresh_init_data():
+    global CURRENT_INIT_DATA, CURRENT_USER_ID, CURRENT_USER_NAME
+    log("+", f"Dang ket noi Telegram de lay init_data @{BOT_USERNAME}...")
+    client = get_authorized_client()
+    await client.connect()
+
+    if not await client.is_user_authorized():
+        log("ERR", "Session Telegram StringSession chua hop le!")
+        await client.disconnect()
+        return None
+
+    try:
+        bot = await client.get_input_entity(BOT_USERNAME)
+        web_view = await client(RequestWebViewRequest(
+            peer=bot,
+            bot=bot,
+            platform="android",
+            from_bot_menu=False,
+            url=WEBAPP_URL
+        ))
+        frag = urllib.parse.urlparse(web_view.url).fragment
+        params = urllib.parse.parse_qs(frag)
+        CURRENT_INIT_DATA = params.get("tgWebAppData", [None])[0]
+
+        parsed_init = urllib.parse.parse_qs(CURRENT_INIT_DATA)
+        user_str = parsed_init.get("user", ["{}"])[0]
+        user_obj = json.loads(user_str)
+        CURRENT_USER_ID = str(user_obj.get("id", CURRENT_USER_ID))
+        CURRENT_USER_NAME = (user_obj.get("first_name", "") + " " + user_obj.get("last_name", "")).strip() or user_obj.get("username", "")
+
+        log("OK", f"Da cap nhat init_data CyberPet! User: {CURRENT_USER_NAME} (ID: {CURRENT_USER_ID})")
+        return CURRENT_INIT_DATA
+    except Exception as e:
+        log("ERR", f"Loi lay init_data CyberPet: {e}")
+        return None
+    finally:
+        await client.disconnect()
+
+# -----------------------------------------------------------------
+#  DOC & GHI DU LIEU QUA TELEGRAM NATIVE CLOUDSTORAGE
+# -----------------------------------------------------------------
+async def load_game_state_from_cloud():
+    client = get_authorized_client()
+    await client.connect()
+
+    try:
+        bot = await client.get_input_entity(BOT_USERNAME)
+        req_data = json.dumps({"keys": ["cyberpet_idle_save_v1"]})
+        res = await client(InvokeWebViewCustomMethodRequest(
+            bot=bot,
+            custom_method="getStorageValues",
+            params=DataJSON(data=req_data)
+        ))
+        curr_data = json.loads(res.data)
+        save_str = curr_data.get("cyberpet_idle_save_v1")
+        if save_str:
+            state = json.loads(save_str)
+            return state
+    except Exception as e:
+        log("WARN", f"Loi doc CloudStorage: {e}")
+    finally:
+        await client.disconnect()
+
+    return {
+        "coins": 0,
+        "coinsFromAds": 0,
+        "buggedReferralGoldReset_v2": False,
+        "referralAntiCheatVersion": 35,
+        "tokens": 0.0,
+        "burnedTokens": 0,
+        "boostMultiplier": 1,
+        "boostTimeLeft": 0,
+        "energyBatterySeconds": 1800,
+        "lastActiveTimestamp": int(time.time() * 1000) + 7200000,
+        "accountCreatedAt": int(time.time() * 1000),
+        "totalAdsWatched": 0,
+        "dailyAdsWatched": 0,
+        "referralId": CURRENT_USER_ID,
+        "referredBy": "",
+        "referralCount": 0,
+        "referralQualifiedCount": 0,
+        "referralEarnings": 0,
+        "monetagLink": "https://uplcm.com/4/12055590",
+        "paymentInfo": {"method": "momo", "bankName": "MB Bank", "accountNumber": "", "accountName": ""},
+        "withdrawHistory": [],
+        "pet": {
+            "id": "cyber_pet",
+            "name": "Linh Thu Cyber (Cyber Cat)",
+            "icon": "🐱",
+            "level": 1,
+            "stars": 1,
+            "baseRate": 0.002,
+            "nextAscendLevel": 10
+        },
+        "_sig": "",
+        "totalTokensWithdrawn": 0
+    }
+
+async def save_game_state_to_cloud(state):
+    client = get_authorized_client()
+    await client.connect()
+
+    try:
+        bot = await client.get_input_entity(BOT_USERNAME)
+        # BÍ QUYẾT FIX ĐỒNG BỘ: Luôn đặt timestamp + 2 tiếng để điện thoại mở lên
+        # luôn nhận diện CloudStorage mới hơn và khôi phục 100% số dư mới!
+        state["lastActiveTimestamp"] = int(time.time() * 1000) + 7200000
+        state["_sig"] = calculate_state_signature(state)
+
+        save_req = json.dumps({"key": "cyberpet_idle_save_v1", "value": json.dumps(state)})
+        save_res = await client(InvokeWebViewCustomMethodRequest(
+            bot=bot,
+            custom_method="saveStorageValue",
+            params=DataJSON(data=save_req)
+        ))
+        return bool(save_res.data and "true" in save_res.data.lower())
+    except Exception as e:
+        log("WARN", f"Loi ghi CloudStorage: {e}")
+        return False
+    finally:
+        await client.disconnect()
+
+# -----------------------------------------------------------------
+#  DONG BO HO SO NGUOI CHOI LEN PINNED MESSAGE ADMIN TELEGRAM
+# -----------------------------------------------------------------
+def sync_to_admin_pinned_db(user_id, tokens, coins, ads, lvl):
+    try:
+        url_get = f"https://api.telegram.org/bot{TG_NOTIFY_BOT_TOKEN}/getChat?chat_id={TG_ADMIN_CHAT_ID}&_t={int(time.time()*1000)}"
+        r = requests.get(url_get, timeout=10)
+        if not r.ok:
+            return False
+
+        res = r.json()
+        pinned = res.get("result", {}).get("pinned_message")
+        if not pinned or not pinned.get("text"):
+            return False
+
+        msg_id = pinned.get("message_id")
+        text = pinned.get("text")
+        raw = text.split('\n', 1)[1] if '\n' in text else text
+        data = json.loads(raw)
+
+        if "p" not in data or not isinstance(data["p"], dict):
+            data["p"] = {}
+
+        cur_time_sec = int(time.time())
+        data["p"][str(user_id)] = [
+            round(tokens, 2),
+            int(coins),
+            int(ads),
+            int(lvl),
+            cur_time_sec
+        ]
+
+        new_text = "⚙️ [CYBERPET_DB_V1]\n" + json.dumps(data, separators=(',', ':'))
+        url_edit = f"https://api.telegram.org/bot{TG_NOTIFY_BOT_TOKEN}/editMessageText"
+        r_edit = requests.post(url_edit, json={
+            "chat_id": TG_ADMIN_CHAT_ID,
+            "message_id": msg_id,
+            "text": new_text
+        }, timeout=10)
+
+        json_res = r_edit.json()
+        return json_res.get("ok", False) or "message is not modified" in str(json_res)
+    except Exception as e:
+        log("WARN", f"Loi dong bo Pinned Cloud DB: {e}")
+        return False
+
+# -----------------------------------------------------------------
+#  CONG THUC GAME ENGINE
+# -----------------------------------------------------------------
+def get_upgrade_cost(level):
+    return level * 10000
+
+def get_pet_mining_speed(level, stars=1):
+    base_speed = 0.002 + max(0, level - 1) * 0.002
+    star_bonus = 2 ** (stars - 1)
+    return base_speed * star_bonus
+
+# -----------------------------------------------------------------
+#  VONG LAP AUTO GAME CHINH (MAIN WORKER)
+# -----------------------------------------------------------------
+async def run_cyberpet_auto():
+    print("""
+====================================================================
+|  TOOL AUTO CYBERPET IDLE 24/7 (NUOI THU DAO TOKEN $PET)          |
+|  Bot: @CyberPetVN_bot                                            |
+|  - StringSession RAM: Triet tieu 100% loi disk image malformed    |
+|  - Dong bo chuan xac voi WebApp tren dien thoai (Fix lech so du)|
+|  - Auto xem quang cao hop le (Vang, Pin +10p, Boost x2, $PET)   |
+|  - Auto dao Token theo toc do thoi gian thuc                     |
+|  - Tinh toan chu ky Anti-Cheat & Dong bo Pinned DB Admin         |
+====================================================================
+    """)
+
+    # 1. Lay init_data khoi dong
+    init_data = await fetch_fresh_init_data()
+    if not init_data:
+        log("ERR", "Khong the khoi dong bot vi thieu init_data!")
+        return
+
+    # 2. Doc trang thai tu CloudStorage
+    state = await load_game_state_from_cloud()
+    if not state:
+        log("ERR", "Khong the doc du lieu tro choi tu CloudStorage!")
+        return
+
+    pet = state.get("pet", {})
+    lvl = pet.get("level", 1)
+    stars = pet.get("stars", 1)
+    coins = state.get("coins", 0)
+    tokens = float(state.get("tokens", 0.0))
+    battery = state.get("energyBatterySeconds", 1800)
+    ads = state.get("totalAdsWatched", 0)
+
+    log("PROFILE", f"Level Pet: Lv.{lvl} (⭐ x{stars}) | Toc do: +{get_pet_mining_speed(lvl, stars):.4f} $PET/s")
+    log("PROFILE", f"So du: {tokens:.4f} $PET (~ {int(tokens * 7):,} VND) | Vang: {coins:,} | Pin: {battery // 60} phut | Ads: {ads}")
+
+    # Dong bo ngay lap tuc len Pinned DB khi khoi dong de 2 ben khop nhau 100%
+    sync_to_admin_pinned_db(CURRENT_USER_ID, tokens, coins, ads, lvl)
+
+    last_refresh_time = time.time()
+    last_cloud_sync_time = time.time()
+    last_tick_time = time.time()
+    start_time = time.time()
+
+    cycle_count = 0
+
+    while True:
+        try:
+            if MAX_RUNTIME > 0 and (time.time() - start_time) >= MAX_RUNTIME:
+                log("INFO", "Hoan thanh phien chay GitHub Actions. Nghi ngoi de phien sau tiep quan!")
+                break
+
+            cycle_count += 1
+            now = time.time()
+            elapsed_sec = int(now - last_tick_time)
+            last_tick_time = now
+
+            # 1. Dao Token theo thoi gian thuc khi con pin
+            if battery > 0 and elapsed_sec > 0:
+                effective_sec = min(elapsed_sec, battery)
+                boost = state.get("boostMultiplier", 1)
+                speed = get_pet_mining_speed(lvl, stars) * boost
+                mined = speed * effective_sec
+
+                tokens += mined
+                battery = max(0, battery - effective_sec)
+                state["tokens"] = tokens
+                state["energyBatterySeconds"] = battery
+
+                b_left = state.get("boostTimeLeft", 0)
+                if b_left > 0:
+                    b_left = max(0, b_left - effective_sec)
+                    state["boostTimeLeft"] = b_left
+                    if b_left == 0:
+                        state["boostMultiplier"] = 1
+
+            # 2. Xem quang cao nhan thuong (Luan phien: Battery -> Coins -> Boost -> Pet)
+            if battery < 1800:
+                reward_type = "battery"
+            elif cycle_count % 5 == 0:
+                reward_type = "boost"
+            elif cycle_count % 3 == 0:
+                reward_type = "pet"
+            else:
+                reward_type = "coins"
+
+            ads += 2
+            state["totalAdsWatched"] = ads
+            state["dailyAdsWatched"] = state.get("dailyAdsWatched", 0) + 2
+
+            reward_desc = ""
+            if reward_type == "battery":
+                battery += 600
+                state["energyBatterySeconds"] = battery
+                reward_desc = f"+10p Pin (Tong: {battery // 60}p)"
+            elif reward_type == "coins":
+                coins += 5
+                state["coins"] = coins
+                state["coinsFromAds"] = state.get("coinsFromAds", 0) + 5
+                reward_desc = f"+5 Vang (Tong: {coins:,})"
+            elif reward_type == "boost":
+                state["boostMultiplier"] = 2
+                state["boostTimeLeft"] = 120
+                reward_desc = "x2 Toc do dao (2 phut)"
+            elif reward_type == "pet":
+                tokens += 0.2
+                state["tokens"] = tokens
+                reward_desc = f"+0.2 $PET (Tong: {tokens:.4f})"
+
+            log("AD", f"L{cycle_count}: Xem quang cao [{reward_type.upper()}] -> {reward_desc} | Ads: {ads}")
+
+            # 3. Kiem tra va Nang cap Pet (Chong loi Anti-Cheat giang cap cua game)
+            cost = get_upgrade_cost(lvl)
+            if coins >= cost and ads >= 2000:
+                coins -= cost
+                lvl += 1
+                pet["level"] = lvl
+                state["pet"] = pet
+                state["coins"] = coins
+                log("UPGRADE", f"🎉 Pet len Lv.{lvl}! Toc do moi: +{get_pet_mining_speed(lvl, stars):.4f} $PET/s!")
+
+            # 4. Luu CloudStorage voi Future Timestamp (chong bi dien thoai ghi de du lieu cu)
+            await save_game_state_to_cloud(state)
+
+            # 5. Dong bo Pinned DB Admin
+            if now - last_cloud_sync_time >= CLOUD_SYNC_INTERVAL:
+                log("SYNC", "Dang dong bo so du len Telegram Cloud DB (Admin Chat)...")
+                ok = sync_to_admin_pinned_db(CURRENT_USER_ID, tokens, coins, ads, lvl)
+                if ok:
+                    log("SYNC", f"Dong bo thanh cong! So du: {tokens:.2f} $PET (~{int(tokens * 7):,} VND)")
+                last_cloud_sync_time = now
+
+            # 6. Lam moi token Telethon moi 2 tieng
+            if now - last_refresh_time >= 7200:
+                await fetch_fresh_init_data()
+                last_refresh_time = now
+
+            # 7. Thong ke dinh ky
+            if cycle_count % 4 == 0:
+                log("STATUS", f"So du: {tokens:.4f} $PET (~ {int(tokens * 7):,} VND) | Pin: {battery // 60}p | Vang: {coins:,} | Lv.{lvl}")
+
+            await asyncio.sleep(AD_INTERVAL_SECONDS)
+
+        except KeyboardInterrupt:
+            log("INFO", "Da dung bot theo yeu cau.")
+            break
+        except Exception as e:
+            log("ERR", f"Loi vong lap: {e}")
+            await asyncio.sleep(5)
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(run_cyberpet_auto())
+    except KeyboardInterrupt:
+        print("\n[STOP] Da dung bot auto CyberPet.")
