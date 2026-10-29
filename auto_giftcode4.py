@@ -1,7 +1,7 @@
 """
 ====================================================================
   BOT QUET & NAP GIFTCODE TELEPET 24/7 (BAN TOI UU NANG CAO)
-  Tai khoan: ACC 4 (@Sỹ Nguyên - ID: 8938080937)
+  Tai khoan: ACC 4 (@Wind_trader - ID: 8735204819)
   TINH NANG NANG CAP:
       - TU DONG LAY INIT_DATA MOI QUA TELETHON (Khong bao gio het han)
       - BE KHOA MOI DANG LINK RUT GON (Layma, Link4m, Linktop, Traffictop, TrafficHub, Traffic68, v.v.)
@@ -39,7 +39,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SESSION_PATH = os.path.join(SCRIPT_DIR, "telepet_acc4")
 
 API_URL = "https://kien.kiemtienngay.us/public/api.php"
-FALLBACK_INIT_DATA = "query_id=AAGpSsAUBAAAAKlKwBSXlQG9&user=%7B%22id%22%3A8938080937%2C%22first_name%22%3A%22S%E1%BB%B9%20Nguy%C3%AAn%22%2C%22last_name%22%3A%22%22%2C%22language_code%22%3A%22vi%22%2C%22allows_write_to_pm%22%3Atrue%2C%22photo_url%22%3A%22https%3A%5C%2F%5C%2Ft.me%5C%2Fi%5C%2Fuserpic%5C%2F320%5C%2F08kLSHS4kXoBVPdxoNuaZCEbJRwjFWWVuJ4JR74iaaxKEDOgYEgMghggmOLBvnaT.svg%22%7D&auth_date=1793284942&signature=4J9PnEzoA9MPUkyGgizFU5k5pgpyneyFr3mD2ZmKIylRxK9tEwokhLwOcBM5RuVQFkrB4VT3-aJhK_XHoTE7Dg&hash=da96c394e3af9223a74999384eb05b7e65f3f3abaaf01f560aadf75eb1253c13"
+FALLBACK_INIT_DATA = "query_id=AAHTpagIBAAAANOlqAiQ0PGe&user=%7B%22id%22%3A8735204819%2C%22first_name%22%3A%22Uweuweuweuweu%22%2C%22last_name%22%3A%22Osas%22%2C%22username%22%3A%22Wind_trader%22%2C%22language_code%22%3A%22vi%22%2C%22allows_write_to_pm%22%3Atrue%2C%22photo_url%22%3A%22https%3A%5C%2F%5C%2Ft.me%5C%2Fi%5C%2Fuserpic%5C%2F320%5C%2FDf9UdWj_lcG78CMooXZXyDrc8fEcf5WhBgsEGeTbFMByWu-kovHAeZlzin8RyNAt.svg%22%7D&auth_date=1793281870&signature=bNSi2MX02oj99MWLXRvg6r00mp3-7KwsshBifoG1AsuwpH45yCaBGjMXQRob_--zWrx8bBw8Yn-QnHP8s41_Bg&hash=c7c6fdea481982de2cefda0c0662fffeab0c98e822b2aa1b52473621a51143ca"
 CURRENT_INIT_DATA = FALLBACK_INIT_DATA
 REDEEMED_CODES_TODAY = set()
 
@@ -128,7 +128,7 @@ async def fetch_fresh_init_data():
             log("WARN", f"Khong the khoi phuc session tu Secret: {e}", Fore.YELLOW)
 
     if not os.path.exists(session_file):
-        log("INFO", "Su dung token init_data san co (@Sỹ Nguyên)...", Fore.CYAN)
+        log("INFO", "Su dung token init_data san co (@Wind_trader)...", Fore.CYAN)
         CURRENT_INIT_DATA = CURRENT_INIT_DATA or FALLBACK_INIT_DATA
         return CURRENT_INIT_DATA
 
@@ -410,7 +410,7 @@ def main():
     print(f"""
 {Fore.MAGENTA}====================================================================
 |  TOOL QUET & BE KHOA GIFTCODE TELEPET 24/7 (TOI UU NANG CAO)     |
-|  Tai khoan: Sỹ Nguyên (@Sỹ Nguyên - ID: 8938080937)                   |
+|  Tai khoan: Uweuweuweuweu Osas (@Wind_trader - ID: 8735204819)                   |
 |  - Chu ky quet: {SCAN_INTERVAL_SECONDS} giay / lan                             |
 |  - Che do Auto-Farm vo han: {'BAT' if AUTO_FARM_ROTATION else 'TAT'}                                 |
 |  - Tu dong lay token init_data tu Telegram                       |
